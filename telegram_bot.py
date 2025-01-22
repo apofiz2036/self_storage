@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 import django
+import requests
+from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
@@ -38,16 +40,36 @@ def start(update: Update, context: CallbackContext):
     update.message.reply_text(text, reply_markup=reply_markup)
 
 
+def count_clicks(update: Update, context: CallbackContext):
+    if update.effective_user.id == OWNER_ID:
+        VK_API_KEY = os.environ['VK_API_KEY']
+        LINK = os.environ['ADVERTSING_LINK']
+        key_link = urlparse(LINK).path.split('/')[-1]
+        url = 'https://api.vk.ru/method/utils.getLinkStats'
+        params = {
+            'key': key_link,
+            'access_token': VK_API_KEY,
+            'interval': 'forever',
+            'v': '5.199'
+        }
+        response = requests.get(url, params)
+        response.raise_for_status()
+        number_of_clicks = response.json()['response']['stats'][0]['views']
+        return f'По вашей ссылке перешли {number_of_clicks} раз'
+    else:
+        return 'У вас нет доступа к этой функции.'
 
 
 def main():
     load_dotenv()
     TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
-
+    OWNER_ID = os.environ['OWNER_ID']
+    
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("clicks", count_clicks))
 
     updater.start_polling()
     updater.idle()
