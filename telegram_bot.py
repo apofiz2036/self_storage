@@ -1,6 +1,8 @@
 import os
 from dotenv import load_dotenv
 import django
+import requests
+from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
 
@@ -129,7 +131,6 @@ def make_order(update: Update, context: CallbackContext):
 def check_client(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
-
     telegram_id = query.from_user.id
     client = Clients.objects.filter(telegram_id=telegram_id).first()
 
@@ -141,6 +142,26 @@ def check_client(update: Update, context: CallbackContext):
         text = 'Вы уже зарегистрированы, это хорошо)'
         context.bot.send_message(chat_id=query.message.chat.id, text=text)
         address_input(update, context)
+        
+        
+def count_clicks(update: Update, context: CallbackContext):
+    if update.effective_user.id == OWNER_ID:
+        VK_API_KEY = os.environ['VK_API_KEY']
+        LINK = os.environ['ADVERTSING_LINK']
+        key_link = urlparse(LINK).path.split('/')[-1]
+        url = 'https://api.vk.ru/method/utils.getLinkStats'
+        params = {
+            'key': key_link,
+            'access_token': VK_API_KEY,
+            'interval': 'forever',
+            'v': '5.199'
+        }
+        response = requests.get(url, params)
+        response.raise_for_status()
+        number_of_clicks = response.json()['response']['stats'][0]['views']
+        return f'По вашей ссылке перешли {number_of_clicks} раз'
+    else:
+        return 'У вас нет доступа к этой функции.'
 
 
 def start_name_input(update: Update, context: CallbackContext):
@@ -235,7 +256,8 @@ def address_input(update: Update, context: CallbackContext):
 def main():
     load_dotenv()
     TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
-
+    OWNER_ID = os.environ['OWNER_ID']
+    
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -250,6 +272,7 @@ def main():
     )
 
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("clicks", count_clicks))
     dp.add_handler(CallbackQueryHandler(consent_personal_data, pattern='consent_personal_data'))
     dp.add_handler(CallbackQueryHandler(send_consents, pattern='send_consents'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='main_menu'))
@@ -259,6 +282,7 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_handler(CallbackQueryHandler(save_personal_data, pattern='save_personal_data'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='self_delivery'))
+
 
     updater.start_polling()
     updater.idle()
