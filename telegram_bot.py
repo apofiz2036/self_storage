@@ -13,6 +13,7 @@ from storage.models import Warehouse, Clients, Order
 
 NAME, PHONE, EMAIL = range(3)
 
+
 def start(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     text = """В наше время, когда пространство в квартирах становится все более ограниченным, многие люди сталкиваются с проблемой хранения сезонных вещей. Склад для хранения может стать отличным решением для тех, кто хочет освободить место в доме, не избавляясь от своих вещей.
@@ -142,8 +143,8 @@ def check_client(update: Update, context: CallbackContext):
         text = 'Вы уже зарегистрированы, это хорошо)'
         context.bot.send_message(chat_id=query.message.chat.id, text=text)
         address_input(update, context)
-        
-        
+
+
 def count_clicks(update: Update, context: CallbackContext):
     if update.effective_user.id == OWNER_ID:
         VK_API_KEY = os.environ['VK_API_KEY']
