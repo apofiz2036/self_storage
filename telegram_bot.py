@@ -5,15 +5,14 @@ from django.utils import timezone
 import requests
 import qrcode
 from io import BytesIO
-from datetime import datetime 
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
+from storage.models import Warehouse, Clients, Order
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'self_storage.settings')
 django.setup()
 
-from storage.models import Warehouse, Clients, Order
 
 NAME, PHONE, EMAIL = range(3)
 
@@ -172,7 +171,7 @@ def count_clicks(update: Update, context: CallbackContext):
         query.message.reply_text(f'По вашей ссылке перешли {number_of_clicks} раз')
     else:
         query.message.reply_text('У вас нет доступа к этой функции')
-
+    main_menu(update, context)
 
 def show_expired_orders(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -185,7 +184,7 @@ def show_expired_orders(update: Update, context: CallbackContext):
         if not expired_orders.exists():
             chat_id = update.effective_chat.id
             context.bot.send_message(chat_id=chat_id, text='Нет просроченных заказов')
-            return
+            return main_menu(update, context)
 
         message = "Просроченные заказы:\n"
         for order in expired_orders:
@@ -198,7 +197,7 @@ def show_expired_orders(update: Update, context: CallbackContext):
 
     else:
         query.message.reply_text('У вас нет доступа к этой функции')
-
+    main_menu(update, context)
 
 def create_qr_code(data):
     qr = qrcode.QRCode(
@@ -225,21 +224,22 @@ def get_qr_code(update: Update, context: CallbackContext):
         client = Clients.objects.get(telegram_id=user_id)
     except Clients.DoesNotExist:
         query.message.reply_text("Вы не зарегистрированы как клиент.")
-        return
+        return main_menu(update, context)
     
     orders = Order.objects.filter(user=client, status__in=['NEW', 'STORED', 'EXPIRED'])
 
     if not orders.exists():
         query.message.reply_text("У вас нет активного заказа")
-        return
+        return main_menu(update, context)
     
     for order in orders:
         qr_data = f"Order ID: {order.id}, Volume: {order.volume}, Address: {order.address_from}"
         qr_image = create_qr_code(qr_data)
         query.message.reply_photo(photo=qr_image)
+        query.message.reply_text(text='Ваш заказ завершен.')
         order.status = 'COMPLETED'
         order.save()
-    
+    main_menu(update, context)
 
 
 def start_name_input(update: Update, context: CallbackContext):
