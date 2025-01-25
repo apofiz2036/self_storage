@@ -1,7 +1,10 @@
 import os
 from dotenv import load_dotenv
 import django
+from django.utils import timezone
 import requests
+import qrcode
+from io import BytesIO
 from datetime import datetime 
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -71,6 +74,7 @@ def main_menu(update: Update, context: CallbackContext):
 
     keyboard = [[InlineKeyboardButton("Правила хранения", callback_data='rules')],
                 [InlineKeyboardButton("Сделать заказ", callback_data='make_order')],
+                [InlineKeyboardButton("Получить qr-код для получения заказа", callback_data='get_qr_code')],
                 [InlineKeyboardButton("Показать статистику кликов по ссылке", callback_data='count_clicks')],
                 [InlineKeyboardButton("Показать просроченные заказы", callback_data='show_expired_orders')]
     ]
@@ -165,11 +169,9 @@ def count_clicks(update: Update, context: CallbackContext):
         response = requests.get(url, params)
         response.raise_for_status()
         number_of_clicks = response.json()['response']['stats'][0]['views']
-        update.callback_query.answer()
-        update.callback_query.message.reply_text(f'По вашей ссылке перешли {number_of_clicks} раз')
+        query.message.reply_text(f'По вашей ссылке перешли {number_of_clicks} раз')
     else:
-        update.callback_query.answer()
-        update.callback_query.message.reply_text('У вас нет доступа к этой функции')
+        query.message.reply_text('У вас нет доступа к этой функции')
 
 
 def show_expired_orders(update: Update, context: CallbackContext):
@@ -180,7 +182,7 @@ def show_expired_orders(update: Update, context: CallbackContext):
         current_date = timezone.now()
         expired_orders = Order.objects.filter(expires_at__lt=current_date, status='EXPIRED')
 
-        if not expired_orders:
+        if not expired_orders.exists():
             chat_id = update.effective_chat.id
             context.bot.send_message(chat_id=chat_id, text='Нет просроченных заказов')
             return
@@ -192,11 +194,52 @@ def show_expired_orders(update: Update, context: CallbackContext):
                         f"Номер телефона: {order.user.phone_number}\n"
                         f"(Срок: {order.expires_at.strftime('%d.%m.%Y')})\n\n")
 
-        update.message.reply_text(message)
+        query.message.reply_text(message)
 
     else:
-        update.callback_query.answer()
-        update.callback_query.message.reply_text('У вас нет доступа к этой функции')
+        query.message.reply_text('У вас нет доступа к этой функции')
+
+
+def create_qr_code(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    output = BytesIO
+    img.save(output, format='PNG')
+    output.seek(0)
+    return output
+
+def get_qr_code(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    user_id = query.from_user.id
+    try:
+        client = Clients.objects.get(telegram_id=user_id)
+    except Clients.DoesNotExist:
+        query.message.reply_text("Вы не зарегистрированы как клиент.")
+        return
+    
+    orders = Order.objects.filter(user=client, status__in=['NEW', 'STORED', 'EXPIRED'])
+
+    if not orders.exists():
+        query.message.reply_text("У вас нет активного заказа")
+        return
+    
+    for order in orders:
+        qr_data = f"Order ID: {order.id}, Volume: {order.volume}, Address: {order.address_from}"
+        qr_image = create_qr_code(qr_data)
+        query.message.reply_photo(photo=qr_image)
+        order.status = 'COMPLETED'
+        order.save()
+    
 
 
 def start_name_input(update: Update, context: CallbackContext):
@@ -291,7 +334,7 @@ def address_input(update: Update, context: CallbackContext):
 def main():
     load_dotenv()
     TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
-    # OWNER_ID = os.environ['USER_ID']
+
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -308,6 +351,7 @@ def main():
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CallbackQueryHandler(show_expired_orders, pattern='show_expired_orders'))
     dp.add_handler(CallbackQueryHandler(count_clicks, pattern='count_clicks'))
+    dp.add_handler(CallbackQueryHandler(get_qr_code, pattern='get_qr_code'))
     dp.add_handler(CallbackQueryHandler(consent_personal_data, pattern='consent_personal_data'))
     dp.add_handler(CallbackQueryHandler(send_consents, pattern='send_consents'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='main_menu'))
