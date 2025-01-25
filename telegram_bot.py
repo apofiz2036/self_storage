@@ -13,7 +13,6 @@ from storage.models import Warehouse, Clients, Order
 
 NAME, PHONE, EMAIL = range(3)
 
-
 def start(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
     text = """В наше время, когда пространство в квартирах становится все более ограниченным, многие люди сталкиваются с проблемой хранения сезонных вещей. Склад для хранения может стать отличным решением для тех, кто хочет освободить место в доме, не избавляясь от своих вещей.
@@ -70,7 +69,8 @@ def main_menu(update: Update, context: CallbackContext):
     query.answer()
 
     keyboard = [[InlineKeyboardButton("Правила хранения", callback_data='rules')],
-                [InlineKeyboardButton("Сделать заказ", callback_data='make_order')]
+                [InlineKeyboardButton("Сделать заказ", callback_data='make_order')],
+                [InlineKeyboardButton("Показать статистику кликов по ссылке", callback_data='count_clicks')]
     ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -146,7 +146,7 @@ def check_client(update: Update, context: CallbackContext):
 
 
 def count_clicks(update: Update, context: CallbackContext):
-    if update.effective_user.id == OWNER_ID:
+    if update.effective_user.id == int(os.environ['OWNER_ID']):
         VK_API_KEY = os.environ['VK_API_KEY']
         LINK = os.environ['ADVERTSING_LINK']
         key_link = urlparse(LINK).path.split('/')[-1]
@@ -160,9 +160,11 @@ def count_clicks(update: Update, context: CallbackContext):
         response = requests.get(url, params)
         response.raise_for_status()
         number_of_clicks = response.json()['response']['stats'][0]['views']
-        return f'По вашей ссылке перешли {number_of_clicks} раз'
+        update.callback_query.answer()
+        update.callback_query.message.reply_text(f'По вашей ссылке перешли {number_of_clicks} раз')
     else:
-        return 'У вас нет доступа к этой функции.'
+        update.callback_query.answer()
+        update.callback_query.message.reply_text('У вас нет доступа к этой функции')
 
 
 def start_name_input(update: Update, context: CallbackContext):
@@ -257,8 +259,7 @@ def address_input(update: Update, context: CallbackContext):
 def main():
     load_dotenv()
     TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
-    OWNER_ID = os.environ['OWNER_ID']
-    
+    # OWNER_ID = os.environ['USER_ID']
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -273,7 +274,7 @@ def main():
     )
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("clicks", count_clicks))
+    dp.add_handler(CallbackQueryHandler(count_clicks, pattern='count_clicks'))
     dp.add_handler(CallbackQueryHandler(consent_personal_data, pattern='consent_personal_data'))
     dp.add_handler(CallbackQueryHandler(send_consents, pattern='send_consents'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='main_menu'))
