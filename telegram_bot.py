@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 import django
 import requests
+from datetime import datetime 
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
@@ -70,7 +71,8 @@ def main_menu(update: Update, context: CallbackContext):
 
     keyboard = [[InlineKeyboardButton("Правила хранения", callback_data='rules')],
                 [InlineKeyboardButton("Сделать заказ", callback_data='make_order')],
-                [InlineKeyboardButton("Показать статистику кликов по ссылке", callback_data='count_clicks')]
+                [InlineKeyboardButton("Показать статистику кликов по ссылке", callback_data='count_clicks')],
+                [InlineKeyboardButton("Показать просроченные заказы", callback_data='show_expired_orders')]
     ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -146,6 +148,9 @@ def check_client(update: Update, context: CallbackContext):
 
 
 def count_clicks(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
     if update.effective_user.id == int(os.environ['OWNER_ID']):
         VK_API_KEY = os.environ['VK_API_KEY']
         LINK = os.environ['ADVERTSING_LINK']
@@ -162,6 +167,33 @@ def count_clicks(update: Update, context: CallbackContext):
         number_of_clicks = response.json()['response']['stats'][0]['views']
         update.callback_query.answer()
         update.callback_query.message.reply_text(f'По вашей ссылке перешли {number_of_clicks} раз')
+    else:
+        update.callback_query.answer()
+        update.callback_query.message.reply_text('У вас нет доступа к этой функции')
+
+
+def show_expired_orders(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    if update.effective_user.id == int(os.environ['OWNER_ID']):
+        current_date = timezone.now()
+        expired_orders = Order.objects.filter(expires_at__lt=current_date, status='EXPIRED')
+
+        if not expired_orders:
+            chat_id = update.effective_chat.id
+            context.bot.send_message(chat_id=chat_id, text='Нет просроченных заказов')
+            return
+
+        message = "Просроченные заказы:\n"
+        for order in expired_orders:
+            message += (f"Заказ #{order.id}\n"
+                        f"Клиент: {order.user.name}\n"
+                        f"Номер телефона: {order.user.phone_number}\n"
+                        f"(Срок: {order.expires_at.strftime('%d.%m.%Y')})\n\n")
+
+        update.message.reply_text(message)
+
     else:
         update.callback_query.answer()
         update.callback_query.message.reply_text('У вас нет доступа к этой функции')
@@ -274,6 +306,7 @@ def main():
     )
 
     dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CallbackQueryHandler(show_expired_orders, pattern='show_expired_orders'))
     dp.add_handler(CallbackQueryHandler(count_clicks, pattern='count_clicks'))
     dp.add_handler(CallbackQueryHandler(consent_personal_data, pattern='consent_personal_data'))
     dp.add_handler(CallbackQueryHandler(send_consents, pattern='send_consents'))
@@ -284,6 +317,7 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_handler(CallbackQueryHandler(save_personal_data, pattern='save_personal_data'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='self_delivery'))
+    
 
 
     updater.start_polling()

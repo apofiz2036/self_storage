@@ -198,7 +198,12 @@ class Order(models.Model):
         null=True,
         verbose_name='Бокс'
     )
-    
+    status = models.CharField(
+        max_length=20,
+        choices=ORDER_STATUSES,
+        default='NEW',
+        verbose_name='Статус'
+    )
     reminder_1 = models.DateTimeField(
         editable=False, 
         null=True,
