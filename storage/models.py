@@ -123,9 +123,6 @@ class Clients(models.Model):
         blank=True,
         verbose_name='Email'
     )
-    #address = models.CharField(
-    #    max_length=200, verbose_name='Адрес склада'
-    #) 
 
     def __str__(self):
         return self.name

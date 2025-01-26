@@ -73,6 +73,7 @@ def main_menu(update: Update, context: CallbackContext):
 
     keyboard = [[InlineKeyboardButton("Правила хранения", callback_data='rules')],
                 [InlineKeyboardButton("Сделать заказ", callback_data='make_order')],
+                [InlineKeyboardButton("Ознакомиться с тарифами", callback_data='tariffs')],
                 [InlineKeyboardButton("Получить qr-код для получения заказа", callback_data='get_qr_code')],
                 [InlineKeyboardButton("Показать статистику кликов по ссылке", callback_data='count_clicks')],
                 [InlineKeyboardButton("Показать просроченные заказы", callback_data='show_expired_orders')]
@@ -82,6 +83,19 @@ def main_menu(update: Update, context: CallbackContext):
     text = 'Это главное меню'
     context.bot.send_message(chat_id=query.message.chat.id, text=text, reply_markup=reply_markup)
 
+
+def tariffs(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    tariffs_message = (
+        'Тарифы аренды бокса:\n'
+        '1. До 1 м³: 100 р./день\n'
+        '2. 1-5 м³: 300 р./день\n'
+        '3. Более 5 м³: 500 р./день\n'
+    )
+    query.message.reply_text(tariffs_message)
+    main_menu(update, context)
 
 def rules(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -350,6 +364,7 @@ def main():
 
     dp.add_handler(CommandHandler("start", start))
     dp.add_handler(CallbackQueryHandler(show_expired_orders, pattern='show_expired_orders'))
+    dp.add_handler(CallbackQueryHandler(tariffs, pattern="tariffs"))
     dp.add_handler(CallbackQueryHandler(count_clicks, pattern='count_clicks'))
     dp.add_handler(CallbackQueryHandler(get_qr_code, pattern='get_qr_code'))
     dp.add_handler(CallbackQueryHandler(consent_personal_data, pattern='consent_personal_data'))

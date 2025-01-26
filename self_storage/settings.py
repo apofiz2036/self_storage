@@ -128,7 +128,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BEAT_SCHEDULE = {
     'send-order-reminder-every-day': {
-        'task': 'your_app.tasks.send_order_reminder',
-        'schedule': crontab(hour=8, minute=0),  # Запускать каждый день в 8:00
+        'task': 'storage.tasks.send_order_reminder',
+        'schedule': crontab(hour=12, minute=0),
     },
 }
