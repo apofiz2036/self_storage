@@ -8,11 +8,11 @@ from io import BytesIO
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
-from storage.models import Warehouse, Clients, Order
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'self_storage.settings')
 django.setup()
 
+from storage.models import Warehouse, Clients, Order
 
 NAME, PHONE, EMAIL = range(3)
 
@@ -189,7 +189,7 @@ def show_expired_orders(update: Update, context: CallbackContext):
         message = "Просроченные заказы:\n"
         for order in expired_orders:
             message += (f"Заказ #{order.id}\n"
-                        f"Клиент: {order.user.name}\n"
+                        f"Клиент: {order.user.username}\n"
                         f"Номер телефона: {order.user.phone_number}\n"
                         f"(Срок: {order.expires_at.strftime('%d.%m.%Y')})\n\n")
 
@@ -210,7 +210,7 @@ def create_qr_code(data):
     qr.make(fit=True)
 
     img = qr.make_image(fill_color="black", back_color="white")
-    output = BytesIO
+    output = BytesIO()
     img.save(output, format='PNG')
     output.seek(0)
     return output
@@ -235,7 +235,7 @@ def get_qr_code(update: Update, context: CallbackContext):
     for order in orders:
         qr_data = f"Order ID: {order.id}, Volume: {order.volume}, Address: {order.address_from}"
         qr_image = create_qr_code(qr_data)
-        query.message.reply_photo(photo=qr_image)
+        query.message.reply_photo(photo=qr_image, caption='Ваш QR-код')
         query.message.reply_text(text='Ваш заказ завершен.')
         order.status = 'COMPLETED'
         order.save()

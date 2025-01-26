@@ -18,3 +18,4 @@ tzdata==2024.2
 tzlocal==5.2
 requests==2.32.3
 qrcode==8.0
+django-celery-beat==2.7.0
