@@ -1,7 +1,10 @@
 import os
 from dotenv import load_dotenv
 import django
+from django.utils import timezone
 import requests
+import qrcode
+from io import BytesIO
 from urllib.parse import urlparse
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler, ConversationHandler, MessageHandler, Filters
@@ -12,7 +15,6 @@ django.setup()
 from storage.models import Warehouse, Clients, Order
 
 NAME, PHONE, EMAIL = range(3)
-
 
 def start(update: Update, context: CallbackContext):
     chat_id = update.effective_chat.id
@@ -70,13 +72,30 @@ def main_menu(update: Update, context: CallbackContext):
     query.answer()
 
     keyboard = [[InlineKeyboardButton("Правила хранения", callback_data='rules')],
-                [InlineKeyboardButton("Сделать заказ", callback_data='make_order')]
+                [InlineKeyboardButton("Сделать заказ", callback_data='make_order')],
+                [InlineKeyboardButton("Ознакомиться с тарифами", callback_data='tariffs')],
+                [InlineKeyboardButton("Получить qr-код для получения заказа", callback_data='get_qr_code')],
+                [InlineKeyboardButton("Показать статистику кликов по ссылке", callback_data='count_clicks')],
+                [InlineKeyboardButton("Показать просроченные заказы", callback_data='show_expired_orders')]
     ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = 'Это главное меню'
     context.bot.send_message(chat_id=query.message.chat.id, text=text, reply_markup=reply_markup)
 
+
+def tariffs(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    tariffs_message = (
+        'Тарифы аренды бокса:\n'
+        '1. До 1 м³: 100 р./день\n'
+        '2. 1-5 м³: 300 р./день\n'
+        '3. Более 5 м³: 500 р./день\n'
+    )
+    query.message.reply_text(tariffs_message)
+    main_menu(update, context)
 
 def rules(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -146,7 +165,10 @@ def check_client(update: Update, context: CallbackContext):
 
 
 def count_clicks(update: Update, context: CallbackContext):
-    if update.effective_user.id == OWNER_ID:
+    query = update.callback_query
+    query.answer()
+
+    if update.effective_user.id == int(os.environ['OWNER_ID']):
         VK_API_KEY = os.environ['VK_API_KEY']
         LINK = os.environ['ADVERTSING_LINK']
         key_link = urlparse(LINK).path.split('/')[-1]
@@ -160,9 +182,78 @@ def count_clicks(update: Update, context: CallbackContext):
         response = requests.get(url, params)
         response.raise_for_status()
         number_of_clicks = response.json()['response']['stats'][0]['views']
-        return f'По вашей ссылке перешли {number_of_clicks} раз'
+        query.message.reply_text(f'По вашей ссылке перешли {number_of_clicks} раз')
     else:
-        return 'У вас нет доступа к этой функции.'
+        query.message.reply_text('У вас нет доступа к этой функции')
+    main_menu(update, context)
+
+def show_expired_orders(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    if update.effective_user.id == int(os.environ['OWNER_ID']):
+        current_date = timezone.now()
+        expired_orders = Order.objects.filter(expires_at__lt=current_date, status='EXPIRED')
+
+        if not expired_orders.exists():
+            chat_id = update.effective_chat.id
+            context.bot.send_message(chat_id=chat_id, text='Нет просроченных заказов')
+            return main_menu(update, context)
+
+        message = "Просроченные заказы:\n"
+        for order in expired_orders:
+            message += (f"Заказ #{order.id}\n"
+                        f"Клиент: {order.user.username}\n"
+                        f"Номер телефона: {order.user.phone_number}\n"
+                        f"(Срок: {order.expires_at.strftime('%d.%m.%Y')})\n\n")
+
+        query.message.reply_text(message)
+
+    else:
+        query.message.reply_text('У вас нет доступа к этой функции')
+    main_menu(update, context)
+
+def create_qr_code(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    img = qr.make_image(fill_color="black", back_color="white")
+    output = BytesIO()
+    img.save(output, format='PNG')
+    output.seek(0)
+    return output
+
+def get_qr_code(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    user_id = query.from_user.id
+    try:
+        client = Clients.objects.get(telegram_id=user_id)
+    except Clients.DoesNotExist:
+        query.message.reply_text("Вы не зарегистрированы как клиент.")
+        return main_menu(update, context)
+    
+    orders = Order.objects.filter(user=client, status__in=['NEW', 'STORED', 'EXPIRED'])
+
+    if not orders.exists():
+        query.message.reply_text("У вас нет активного заказа")
+        return main_menu(update, context)
+    
+    for order in orders:
+        qr_data = f"Order ID: {order.id}, Volume: {order.volume}, Address: {order.address_from}"
+        qr_image = create_qr_code(qr_data)
+        query.message.reply_photo(photo=qr_image, caption='Ваш QR-код')
+        query.message.reply_text(text='Ваш заказ завершен.')
+        order.status = 'COMPLETED'
+        order.save()
+    main_menu(update, context)
 
 
 def start_name_input(update: Update, context: CallbackContext):
@@ -257,8 +348,7 @@ def address_input(update: Update, context: CallbackContext):
 def main():
     load_dotenv()
     TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
-    OWNER_ID = os.environ['OWNER_ID']
-    
+
     updater = Updater(TELEGRAM_TOKEN, use_context=True)
     dp = updater.dispatcher
 
@@ -273,7 +363,10 @@ def main():
     )
 
     dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("clicks", count_clicks))
+    dp.add_handler(CallbackQueryHandler(show_expired_orders, pattern='show_expired_orders'))
+    dp.add_handler(CallbackQueryHandler(tariffs, pattern="tariffs"))
+    dp.add_handler(CallbackQueryHandler(count_clicks, pattern='count_clicks'))
+    dp.add_handler(CallbackQueryHandler(get_qr_code, pattern='get_qr_code'))
     dp.add_handler(CallbackQueryHandler(consent_personal_data, pattern='consent_personal_data'))
     dp.add_handler(CallbackQueryHandler(send_consents, pattern='send_consents'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='main_menu'))
@@ -283,6 +376,7 @@ def main():
     dp.add_handler(conv_handler)
     dp.add_handler(CallbackQueryHandler(save_personal_data, pattern='save_personal_data'))
     dp.add_handler(CallbackQueryHandler(main_menu, pattern='self_delivery'))
+    
 
 
     updater.start_polling()
